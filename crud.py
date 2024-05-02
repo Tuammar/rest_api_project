@@ -3,36 +3,43 @@ from sqlalchemy.future import select
 from sqlalchemy import update
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.dialects.postgresql import UUID
-from database_models import Base
+from models import Base
 from datetime import date
-from database_models import UsersTable
-from sqlalchemy.exc import IntegrityError, NoResultFound
+from models import User
+from sqlalchemy.exc import IntegrityError
 from passlib.hash import bcrypt
+from schemas import UserSchema, LockSchema
+import os
+import asyncio
+
 
 
 class CRUD:
     def __init__(self):
-        self.engine = create_async_engine("postgresql+asyncpg://postgres:123@localhost/prof_zadaniye", echo=True)
+        self.engine = create_async_engine("postgresql+asyncpg://postgres:123@stazhirovka_vk_db_1/rest_api_db")
         self.async_session = sessionmaker(self.engine, expire_on_commit=False, class_=AsyncSession)
 
+    async def create_table(self):
+        async with self.engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
     async def create_user_db(self, user_id: UUID, created_ad: date, login: str, password: str,
-                        project_id: UUID, env: str, domain: str, locktime: float):
+                        project_id: UUID, env: str, domain: str, locktime: float) -> UserSchema:
         async with self.async_session() as session:
-            new_user = UsersTable(user_id=user_id, created_ad=created_ad, login=login, password=bcrypt.hash(password),
+            new_user = User(user_id=user_id, created_ad=created_ad, login=login, password=bcrypt.hash(password),
                                     project_id=project_id, env=env,
                                     domain=domain, locktime=locktime)
             try:
                 session.add(new_user)
                 await session.commit()
-                return {user_id, created_ad, login, password,
-                        project_id, env, domain, locktime}
-            except IntegrityError as e:
+                return new_user
+            except IntegrityError:
                 await session.rollback()
-                print(e)
+                return {'error': 'IntegrityError'}
     
-    async def get_users_db(self) -> list[dict]:
+    async def get_users_db(self) -> list[UserSchema]:
         async with self.async_session() as session:
-            stmt = select(UsersTable)
+            stmt = select(User)
             select_result = await session.execute(stmt)
             final_result = []
             for i in select_result:
@@ -50,26 +57,27 @@ class CRUD:
                 final_result.append(user_data)
             return final_result
     
-    # async def get_user_by_id(self, uid) -> list[dict]:
+    # async def get_user_by_login(self, login) -> UserSchema:
     #     async with self.async_session() as session:
-    #         stmt = select(UsersTable).where(UsersTable.user_id == uid)
+    #         stmt = select(User).where(User.login == login)
     #         selected_user = await session.execute(stmt)
-    #         selected_user = selected_user.fetchone()[0]
-    #         user_data = {
-    #             "user_id": selected_user.user_id,
-    #             "created_ad": selected_user.created_ad,
-    #             "login": selected_user.login,
-    #             "password": selected_user.password,
-    #             "project_id": selected_user.project_id,
-    #             "env": selected_user.env,
-    #             "domain": selected_user.domain,
-    #             "locktime": selected_user.locktime
-    #             }
-    #         return user_data
-    
-    async def get_user_by_login(self, login) -> list[dict]:
+    #         if selected_user:
+    #             selected_user = selected_user.fetchone()[0]
+    #             user_data = {
+    #                 "user_id": selected_user.user_id,
+    #                 "created_ad": selected_user.created_ad,
+    #                 "login": selected_user.login,
+    #                 "password": selected_user.password,
+    #                 "project_id": selected_user.project_id,
+    #                 "env": selected_user.env,
+    #                 "domain": selected_user.domain,
+    #                 "locktime": selected_user.locktime
+    #                 }
+    #             return user_data
+            
+    async def get_user_by_user_id(self, user_id) -> UserSchema:
         async with self.async_session() as session:
-            stmt = select(UsersTable).where(UsersTable.login == login)
+            stmt = select(User).where(User.user_id == user_id)
             selected_user = await session.execute(stmt)
             selected_user = selected_user.fetchone()[0]
             user_data = {
@@ -83,29 +91,38 @@ class CRUD:
                 "locktime": selected_user.locktime
                 }
             return user_data
+        
+    async def user_locktime_db(self, user_id: UUID):
+        async with self.async_session() as session:
+            user = await self.get_user_by_user_id(user_id)
+            return user['locktime']
     
-    async def lock_acquire_db(self, login: str, password: str, project_id: UUID, locktime: float) -> dict:
+    async def lock_acquire_db(self, user_id: UUID, locktime: float) -> LockSchema:
         async with self.async_session() as session:
             try:
-                user = await self.get_user_by_login(login)
-                if bcrypt.verify(password.encode('utf-8'), user['password'].encode('utf-8')):
-                    stmt = update(UsersTable).where(UsersTable.login == login).\
-                        values(project_id=project_id, locktime=locktime)
-                    await session.execute(stmt)
-                    await session.commit()
-                    return {'user': login, 'project_id': project_id, 'locktime': locktime, 'status': 'done'}
+                if await self.user_locktime_db(user_id) != 0.0:
+                    return {'user': user_id, 'status': 'user had already been locked'}
+                stmt = update(User).where(User.user_id == user_id and User.locktime == 0.0).\
+                    values(locktime=locktime)
+                await session.execute(stmt)
+                await session.commit()
+                return {'user': user_id, 'locktime': locktime, 'status': 'done'}
             except Exception as e:
-                return {'error': e}
+                return {'user': user_id, 'status': 'error'} # возвращать код ошибки
+# сделать тайп-хинт возврата и возвращать user
+    async def lock_release_db(self, user_id: UUID) -> LockSchema:
+        async with self.async_session() as session:
+            try:
+                if await self.user_locktime_db(user_id) == 0.0:
+                    return {'user': user_id, 'status': 'user had already been free'}
+                stmt = update(User).where(User.user_id == user_id).\
+                    values(locktime=0.0)
+                await session.execute(stmt)
+                await session.commit()
+                return {'user': user_id, 'locktime': 0.0, 'status': 'done'}
+            except Exception as e:
+                return {'user': user_id, 'status': 'error'}
 
-    async def lock_release_db(self, login: str, password: str) -> dict:
-        async with self.async_session() as session:
-            try:
-                user = await self.get_user_by_login(login)
-                if bcrypt.verify(password.encode('utf-8'), user['password'].encode('utf-8')):
-                    stmt = update(UsersTable).where(UsersTable.login == login).\
-                        values(locktime=0.0)
-                    await session.execute(stmt)
-                    await session.commit()
-                    return {'user': login, 'locktime': 0.0, 'status': 'done'}
-            except Exception as e:
-                return {'error': e}
+crud_instance = CRUD()
+
+asyncio.run(crud_instance.create_table())

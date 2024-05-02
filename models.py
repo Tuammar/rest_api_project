@@ -1,30 +1,17 @@
-from pydantic import BaseModel
-from typing import Literal
-from datetime import date
-from uuid import UUID, uuid4
+from sqlalchemy import Column, String, Date, Float
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import declarative_base
 
-class AnswerPing(BaseModel):
-    test: str
+Base = declarative_base()
 
-class User(BaseModel):
-    user_id: UUID = uuid4()
-    created_ad: date = date.today()
-    login: str
-    password: str
-    project_id: UUID
-    env: Literal['prod', 'preprod', 'stage']
-    domain: Literal['canary', 'regular']
-    locktime: float =  0.0
+class User(Base):
+    __tablename__ = 'users'
+    user_id = Column(UUID(as_uuid=True), primary_key=True)
+    created_ad = Column(Date)
+    login = Column(String, nullable=False, unique=True)
+    password = Column(String, nullable=False)
+    project_id = Column(UUID(as_uuid=True))
+    env = Column(String)
+    domain = Column(String)
+    locktime = Column(Float)
 
-class UserAuthorisation(BaseModel):
-    login: str 
-    password: str
-
-class LockAcquisition(BaseModel):
-    login: str
-    password: str
-    project_id: UUID
-
-class LockRelease(BaseModel):
-    login: str
-    password: str
