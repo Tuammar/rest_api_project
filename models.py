@@ -8,8 +8,9 @@ from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
 
+
 class User(Base):
-    __tablename__ = 'users'
+    __tablename__ = "users"
     user_id = Column(UUID(as_uuid=True), primary_key=True)
     created_ad = Column(Date)
     login = Column(String, nullable=False, unique=True)
@@ -18,4 +19,3 @@ class User(Base):
     env = Column(String)
     domain = Column(String)
     locktime = Column(Float)
-
