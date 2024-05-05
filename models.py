@@ -2,6 +2,10 @@ from sqlalchemy import Column, String, Date, Float
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import declarative_base
 
+"""в models.py задан класс User - описание
+структуры таблицы users, в которой
+хранятся данные о пользователях"""
+
 Base = declarative_base()
 
 class User(Base):

@@ -2,10 +2,14 @@ FROM python:3.11
 
 RUN pip install poetry
 
-COPY . /app
 WORKDIR /app
 
-COPY rest_api/pyproject.toml rest_api/poetry.lock /app/
+COPY pyproject.toml poetry.lock /app/
 RUN poetry install
 
-CMD ["poetry", "run", "python", "main.py"]
+COPY . /app
+COPY entrypoint.sh /app/
+
+RUN chmod +x /app/entrypoint.sh
+
+ENTRYPOINT ["/app/entrypoint.sh"]
