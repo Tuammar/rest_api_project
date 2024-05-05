@@ -21,4 +21,4 @@ app.include_router(release_lock_router)
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host=os.getenv("host"), port=int(os.getenv("port")))
+    uvicorn.run(app, host=os.getenv("HOST"), port=int(os.getenv("PORT")))

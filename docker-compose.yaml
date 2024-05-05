@@ -9,8 +9,8 @@ services:
       - postgres
     environment:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/postgres
-      - host=0.0.0.0
-      - port=8000
+      - HOST=0.0.0.0
+      - PORT=8000
 
   postgres:
     image: postgres:15
